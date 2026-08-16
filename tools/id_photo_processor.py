@@ -11,8 +11,10 @@
 
 import io
 from PIL import Image, ImageEnhance
-from rembg import remove
-
+# ملاحظة: rembg تُستورد داخل الدالة نفسها (lazy import) وليس هنا بالأعلى،
+# لأنها مكتبة ثقيلة على الذاكرة (تجر معها onnxruntime/numba/scipy).
+# استيرادها هنا كان يحمّلها مع كل إقلاع للتطبيق حتى لو محد يستخدم أداة الصور،
+# وهذا كان يسبب تعليق/تعطل صامت على خطط الاستضافة المجانية محدودة الرام.
 
 MM_TO_INCH = 1 / 25.4
 
@@ -28,6 +30,7 @@ def replace_background_with_white(image: Image.Image) -> Image.Image:
     إزالة الخلفية الأصلية واستبدالها بأبيض نقي، مع الحفاظ الكامل على حواف
     الوجه والملابس كما هي (بدون أي إعادة رسم أو تعديل للشخص نفسه).
     """
+    from rembg import remove  # تحميل المكتبة فقط عند الاستخدام الفعلي
     no_bg = remove(image)  # يرجع صورة RGBA بخلفية شفافة
     white_bg = Image.new("RGBA", no_bg.size, (255, 255, 255, 255))
     white_bg.paste(no_bg, (0, 0), no_bg)
