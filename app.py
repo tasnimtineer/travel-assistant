@@ -1,6 +1,5 @@
 """
-واجهة Streamlit للمساعد الإداري - نسخة مجمّلة (تصميم عربي RTL، ألوان سفر، شريط جانبي).
-جاهزة للنشر المجاني على Render / Streamlit Cloud.
+واجهة Streamlit للمساعد الإداري - تصميم مبسّط يشبه واجهة Claude (نظيف، أبيض، هادي).
 """
 
 import os
@@ -11,14 +10,13 @@ from tools.definitions import TOOLS
 from tools.executors import execute_tool
 
 st.set_page_config(
-    page_title="المساعد الإداري - شركة السفر والسياحة",
+    page_title="المساعد الإداري - شركة تنير للسفر والسياحة",
     page_icon="✈️",
     layout="centered",
-    initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------
-# تنسيق عام: اتجاه عربي RTL، خط واضح، ألوان سفر (أزرق/ذهبي)، فقاعات محادثة
+# تصميم مبسّط: خلفية بيضاء، خط عربي واضح، فقاعات هادية، صندوق كتابة ثابت بالأسفل
 # ---------------------------------------------------------------
 st.markdown(
     """
@@ -31,66 +29,36 @@ st.markdown(
     }
 
     .stApp {
-        background: linear-gradient(180deg, #0f2440 0%, #13315c 100%);
+        background: #ffffff;
     }
 
-    /* رأس الصفحة */
     .main-header {
         text-align: center;
-        padding: 1.2rem 0 0.5rem 0;
+        padding: 0.5rem 0 1.5rem 0;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 1rem;
     }
     .main-header h1 {
-        color: #ffffff;
-        font-size: 1.9rem;
-        margin-bottom: 0.2rem;
+        color: #1a1a1a;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin-bottom: 0.1rem;
     }
     .main-header p {
-        color: #d4af37;
-        font-size: 0.95rem;
+        color: #888;
+        font-size: 0.85rem;
         margin-top: 0;
     }
 
-    /* صندوق المحادثة */
-    section[data-testid="stChatMessageContainer"], .block-container {
-        background: transparent;
-    }
-
     div[data-testid="stChatMessage"] {
-        border-radius: 16px;
-        padding: 0.6rem 1rem;
-        margin-bottom: 0.6rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        background: transparent;
+        padding: 0.8rem 0.2rem;
+        border-bottom: 1px solid #f2f2f2;
     }
 
-    /* فقاعة المستخدم */
-    div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-user"]) {
-        background: #d4af37;
-    }
-    div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-user"]) p {
-        color: #0f2440 !important;
-        font-weight: 500;
-    }
-
-    /* فقاعة المساعد */
-    div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-assistant"]) {
-        background: #ffffff;
-    }
-    div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-assistant"]) p {
-        color: #13315c !important;
-    }
-
-    /* صندوق الكتابة */
     .stChatInput textarea {
-        border-radius: 12px !important;
-        border: 2px solid #d4af37 !important;
-    }
-
-    /* الشريط الجانبي */
-    section[data-testid="stSidebar"] {
-        background: #0a1a30;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #f0f0f0 !important;
+        border-radius: 14px !important;
+        border: 1px solid #ddd !important;
     }
 
     #MainMenu, footer, header {visibility: hidden;}
@@ -99,44 +67,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------
-# الشريط الجانبي: هوية الشركة + المميزات + إعادة تعيين المحادثة
-# ---------------------------------------------------------------
-with st.sidebar:
-    st.markdown("### ✈️ شركة السفر والسياحة")
-    st.markdown("**المساعد الإداري الذكي**")
-    st.markdown("---")
-    st.markdown("#### 🧰 المميزات المتاحة")
-    st.markdown(
-        """
-        - 📋 إدخال بيانات العملاء
-        - 🖼️ معالجة صور جواز السفر
-        - 📰 ملخص الأخبار اليومي
-        - ✈️ البحث عن تذاكر الطيران
-        - 📧 إرسال الإيميلات
-        """
-    )
-    st.markdown("---")
-    if st.button("🗑️ محادثة جديدة", use_container_width=True):
-        st.session_state.history = []
-        st.rerun()
-    st.caption("نسخة تجريبية")
-
-# ---------------------------------------------------------------
-# رأس الصفحة
-# ---------------------------------------------------------------
 st.markdown(
     """
     <div class="main-header">
         <h1>✈️ المساعد الإداري</h1>
-        <p>لشركة السفر والسياحة — مدعوم بالذكاء الاصطناعي</p>
+        <p>شركة تنير للسفر والسياحة</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------------
-# منطق الاتصال بـ Claude (بدون أي تغيير عن النسخة السابقة)
+# منطق الاتصال بـ Claude (بدون تغيير)
 # ---------------------------------------------------------------
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 
@@ -149,20 +91,18 @@ MODEL = "claude-sonnet-4-6"
 
 SYSTEM_PROMPT = """أنت المساعد الإداري الذكي لشركة سفر وسياحة.
 مهامك: إدخال بيانات العملاء، معالجة صور جواز السفر، تلخيص الأخبار اليومية،
-البحث عن تذاكر الطيران، وإرسال الإيميلات. تحدث بالعربية دائماً، وكن ودوداً ومهنياً."""
+البحث عن تذاكر الطيران، وإرسال الإيميلات والمساعدة عموما في امور السفر. تحدث بالعربية دائماً، وكن ودوداً ومهنياً."""
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# رسالة ترحيب إذا المحادثة فاضية
 if not st.session_state.history:
     with st.chat_message("assistant", avatar="✈️"):
-        st.write("أهلاً بك! 👋 كيف أقدر أساعدك اليوم؟ (تسجيل بيانات عميل، معالجة صورة، أخبار، تذاكر طيران، أو إرسال إيميل)")
+        st.write("أهلاً بك 👋 كيف أقدر أساعدك اليوم؟")
 
-# عرض المحادثة السابقة
 for msg in st.session_state.history:
     if msg["role"] == "user" and isinstance(msg["content"], str):
-        with st.chat_message("user", avatar="🧑"):
+        with st.chat_message("user"):
             st.write(msg["content"])
     elif msg["role"] == "assistant":
         text = "".join(b.text for b in msg["content"] if getattr(b, "type", None) == "text")
@@ -190,15 +130,15 @@ def run_agent(user_message: str):
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
-                with st.status(f"🔧 تنفيذ: {block.name}", expanded=False):
+                with st.status(f"🔧 {block.name}", expanded=False):
                     result = execute_tool(block.name, block.input)
                 tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
         st.session_state.history.append({"role": "user", "content": tool_results})
 
 
-user_input = st.chat_input("اكتب طلبك هنا... (مثال: سجل بيانات عميل اسمه أحمد)")
+user_input = st.chat_input("اكتب رسالتك هنا...")
 if user_input:
-    with st.chat_message("user", avatar="🧑"):
+    with st.chat_message("user"):
         st.write(user_input)
     with st.chat_message("assistant", avatar="✈️"):
         with st.spinner("جاري المعالجة..."):
