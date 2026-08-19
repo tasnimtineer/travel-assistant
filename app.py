@@ -16,7 +16,7 @@ from database import get_session, Conversation, init_db
 init_db()
 
 st.set_page_config(
-    page_title="المساعد الإداري الشخصي للمدير محمد - شركة تنير للسفر والسياحة",
+    page_title="المساعد الإداري  - شركة تنير للسفر والسياحة",
     page_icon="✈️",
     layout="centered",
 )
@@ -96,7 +96,7 @@ def load_conversation(conversation_id):
 # الشريط الجانبي: المحادثات السابقة (زي Claude بالضبط)
 # ---------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### ✈️ المساعد الإداري")
+    st.markdown("### ✈️  المساعد الإداري الشخصي للمدير محمد")
     if st.button("➕ محادثة جديدة", use_container_width=True):
         st.session_state.history = []
         st.session_state.conversation_id = None
