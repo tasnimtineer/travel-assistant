@@ -5,7 +5,7 @@
 
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///travel_agency.db")
@@ -24,6 +24,17 @@ class Customer(Base):
     email = Column(String, nullable=True)
     booking_details = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Conversation(Base):
+    """محادثة محفوظة بشكل دائم - تسمح للمستخدم بالرجوع لمحادثات سابقة زي Claude."""
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)          # أول رسالة بالمحادثة (مختصرة) كعنوان
+    messages_json = Column(Text, nullable=False)     # كامل المحادثة محفوظة بصيغة JSON
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 def init_db():
