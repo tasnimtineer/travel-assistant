@@ -1,13 +1,17 @@
 """
-واجهة Streamlit النهائية للمساعد الإداري.
+واجهة Streamlit النهائية للمساعد الإداري - شركة تنير للسفر والسياحة.
 - تصميم مبسّط أنيق (يشبه Claude)
-- حفظ دائم للمحادثات بقاعدة البيانات (يمكن الرجوع لها لاحقاً، زي Claude بالضبط)
+- حفظ دائم للمحادثات بقاعدة البيانات
+- يدعم إرسال الصور فعلياً لكلود (مش بس عرضها)
+- موديل محدّث + system prompt مفصّل + معالجة أخطاء + تقليم للمحادثة الطويلة
 """
 
 import os
 import json
+import base64
+import mimetypes
 import streamlit as st
-from anthropic import Anthropic
+from anthropic import Anthropic, APIError, APIConnectionError, RateLimitError
 
 from tools.definitions import TOOLS
 from tools.executors import execute_tool
@@ -39,21 +43,58 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------
+# إعدادات عامة
+# ---------------------------------------------------------------
+MODEL = "claude-sonnet-5"          # الموديل الحالي الأحدث في فئة Sonnet
+MAX_TOKENS = 4096                  # كانت 1500 - قليلة جداً لمهام فيها tools
+MAX_HISTORY_MESSAGES = 40          # سقف لعدد الرسائل المُرسلة للـ API عشان الكونتكست ما يكبرش من غير حد
+
+SYSTEM_PROMPT = """أنتِ المساعدة الإدارية الذكية لشركة "تنير للسفر والسياحة".
+
+# دورك
+تساعدين فريق الشركة في: إدخال بيانات العملاء في قاعدة البيانات الداخلية، معالجة وقراءة
+صور جوازات السفر، تلخيص أخبار السفر والطيران والعمرة، البحث عن تذاكر الطيران، وصياغة
+وإرسال الإيميلات للعملاء والموردين.
+
+# قواعد استخدام الأدوات (Tools)
+- لا تخمّني بيانات ناقصة (رقم جواز، تاريخ ميلاد، اسم مطار). لو المعلومة غير مؤكدة، اسألي
+  المستخدمة قبل تنفيذ أي إجراء يعتمد عليها.
+- قبل تنفيذ أي إجراء لا يمكن التراجع عنه (إرسال إيميل فعلي، حفظ بيانات نهائي)، اعرضي
+  ملخص لما ستفعلينه واطلبي تأكيد صريح، إلا إذا طلبت المستخدمة التنفيذ المباشر بوضوح.
+- عند معالجة صورة جواز سفر: تأكدي من وضوح البيانات المطلوبة (الاسم، الرقم، تاريخ
+  الانتهاء) قبل تثبيتها، ونبّهي لو الصورة غير واضحة بدل التخمين.
+- لو الأداة المطلوبة غير متاحة أو فشلت، وضّحي هذا صراحة للمستخدمة بدل تأليف نتيجة.
+
+# أسلوب الرد
+- تحدثي بالعربية دائماً إلا إذا طلبت المستخدمة غير ذلك.
+- كوني ودودة ومهنية، وباختصار مباشر - بدون حشو أو مقدمات طويلة.
+- في المهام المركبة، رتّبي خطواتك بوضوح (نقاط أو أرقام) بدل فقرة طويلة متصلة.
+- إذا كان الطلب غامضاً، اسألي سؤال توضيحي واحد محدد بدل الافتراض العشوائي.
+"""
+
+# ---------------------------------------------------------------
 # حفظ/تحميل المحادثات من قاعدة البيانات
 # ---------------------------------------------------------------
+def _extract_text(content):
+    """يسحب النص فقط من محتوى قد يكون str أو قائمة content blocks."""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for b in content:
+        btype = b.get("type") if isinstance(b, dict) else getattr(b, "type", None)
+        if btype == "text":
+            parts.append(b.get("text") if isinstance(b, dict) else b.text)
+    return "".join(parts)
+
+
 def save_conversation(conversation_id, history):
-    """يحفظ المحادثة كاملة بقاعدة البيانات (بشكل قابل للاسترجاع لاحقاً)."""
     session = get_session()
     try:
         serializable = []
         for msg in history:
-            content = msg["content"]
-            if isinstance(content, str):
-                serializable.append({"role": msg["role"], "content": content})
-            else:
-                text = "".join(getattr(b, "text", "") for b in content if getattr(b, "type", None) == "text")
-                if text:
-                    serializable.append({"role": msg["role"], "content": text})
+            text = _extract_text(msg["content"])
+            if text:
+                serializable.append({"role": msg["role"], "content": text})
 
         title = serializable[0]["content"][:50] if serializable else "محادثة جديدة"
 
@@ -93,13 +134,14 @@ def load_conversation(conversation_id):
 
 
 # ---------------------------------------------------------------
-# الشريط الجانبي: المحادثات السابقة (زي Claude بالضبط)
+# الشريط الجانبي
 # ---------------------------------------------------------------
 with st.sidebar:
     st.markdown("### ✈️ المساعد الإداري")
     if st.button("➕ محادثة جديدة", use_container_width=True):
         st.session_state.history = []
         st.session_state.conversation_id = None
+        st.session_state.pending_image_b64 = None
         st.rerun()
 
     st.markdown("---")
@@ -108,6 +150,7 @@ with st.sidebar:
         if st.button(conv_title or "محادثة", key=f"conv_{conv_id}", use_container_width=True):
             st.session_state.history = load_conversation(conv_id)
             st.session_state.conversation_id = conv_id
+            st.session_state.pending_image_b64 = None
             st.rerun()
 
 st.markdown(
@@ -116,17 +159,21 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------
-# رفع صورة لمعالجتها (صورة جواز سفر مثلاً) - اختياري
+# رفع صورة - وتجهيزها فعلياً عشان تتبعت لكلود
 # ---------------------------------------------------------------
-uploaded_file = st.file_uploader("📎 ارفع صورة هنا لو حابة تعدّليها (اختياري)", type=["jpg", "jpeg", "png"])
-uploaded_image_path = None
+if "pending_image_b64" not in st.session_state:
+    st.session_state.pending_image_b64 = None
+if "pending_image_media_type" not in st.session_state:
+    st.session_state.pending_image_media_type = None
+
+uploaded_file = st.file_uploader("📎 ارفع صورة هنا لو حابة تعدّليها أو تستخرجي بيانات منها", type=["jpg", "jpeg", "png"])
 if uploaded_file is not None:
-    os.makedirs("/tmp/uploads", exist_ok=True)
-    uploaded_image_path = f"/tmp/uploads/{uploaded_file.name}"
-    with open(uploaded_image_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.image(uploaded_file, caption="الصورة المرفوعة", width=150)
-    st.caption(f"✅ جاهزة — اكتبي مثلاً: عدّل هذي الصورة لمقاس جواز سفر")
+    raw_bytes = uploaded_file.getbuffer()
+    media_type = mimetypes.guess_type(uploaded_file.name)[0] or "image/jpeg"
+    st.session_state.pending_image_b64 = base64.standard_b64encode(bytes(raw_bytes)).decode("utf-8")
+    st.session_state.pending_image_media_type = media_type
+    st.image(uploaded_file, caption="الصورة المرفوعة - جاهزة للإرسال مع رسالتك التالية", width=150)
+    st.caption("✅ اكتبي مثلاً: استخرج بيانات جواز السفر من هذي الصورة")
 
 # ---------------------------------------------------------------
 # الاتصال بـ Claude
@@ -137,12 +184,6 @@ if not api_key:
     st.stop()
 
 client = Anthropic(api_key=api_key)
-MODEL = "claude-sonnet-4-6"
-
-SYSTEM_PROMPT = """أنت المساعد الإداري الذكي لشركة سفر وسياحة.
-مهامك: إدخال بيانات العملاء (بقاعدة بياناتنا الداخلية فقط)، معالجة صور جواز السفر،
-تلخيص أخبار السفر والطيران والعمرة، البحث عن تذاكر الطيران، وإرسال الإيميلات.وان تكون مساعد ذكي في كل ما يطلب منك
-تحدث بالعربية دائماً الا عند طلب العميل للتغير، وكن ودوداً ومهنياً."""
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -154,28 +195,61 @@ if not st.session_state.history:
         st.write("أهلاً بك 👋 كيف أقدر أساعدك اليوم؟")
 
 for msg in st.session_state.history:
-    if msg["role"] == "user" and isinstance(msg["content"], str):
-        with st.chat_message("user"):
-            st.write(msg["content"])
+    if msg["role"] == "user":
+        text = _extract_text(msg["content"])
+        if text:
+            with st.chat_message("user"):
+                st.write(text)
     elif msg["role"] == "assistant":
-        content = msg["content"]
-        if isinstance(content, str):
-            text = content
-        else:
-            text = "".join(getattr(b, "text", "") for b in content if getattr(b, "type", None) == "text")
+        text = _extract_text(msg["content"])
         if text:
             with st.chat_message("assistant", avatar="✈️"):
                 st.write(text)
 
 
+def build_user_content(text: str):
+    """يبني محتوى الرسالة، ويرفق الصورة المعلّقة (لو موجودة) فعلياً مع النص."""
+    content = []
+    if st.session_state.pending_image_b64:
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": st.session_state.pending_image_media_type,
+                "data": st.session_state.pending_image_b64,
+            },
+        })
+        # نمسحها بعد الاستخدام عشان ما تتكررش في كل رسالة جاية
+        st.session_state.pending_image_b64 = None
+        st.session_state.pending_image_media_type = None
+    content.append({"type": "text", "text": text})
+    return content
+
+
+def trimmed_history():
+    """يرسل آخر MAX_HISTORY_MESSAGES رسالة فقط للـ API عشان الكونتكست ما يكبرش من غير حد."""
+    return st.session_state.history[-MAX_HISTORY_MESSAGES:]
+
+
 def run_agent(user_message: str):
-    st.session_state.history.append({"role": "user", "content": user_message})
+    st.session_state.history.append({"role": "user", "content": build_user_content(user_message)})
 
     while True:
-        response = client.messages.create(
-            model=MODEL, max_tokens=1500, system=SYSTEM_PROMPT,
-            tools=TOOLS, messages=st.session_state.history,
-        )
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=trimmed_history(),
+            )
+        except RateLimitError:
+            return "⚠️ في ضغط على الخدمة حالياً، جربي بعد شوية من فضلك."
+        except APIConnectionError:
+            return "⚠️ فيه مشكلة اتصال بالشبكة، تأكدي من الإنترنت وحاولي تاني."
+        except APIError as e:
+            return f"⚠️ حصل خطأ من الخدمة: {e}"
+
         st.session_state.history.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason != "tool_use":
@@ -185,7 +259,10 @@ def run_agent(user_message: str):
         for block in response.content:
             if block.type == "tool_use":
                 with st.status(f"🔧 {block.name}", expanded=False):
-                    result = execute_tool(block.name, block.input)
+                    try:
+                        result = execute_tool(block.name, block.input)
+                    except Exception as e:
+                        result = f"فشل تنفيذ الأداة: {e}"
                 tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
         st.session_state.history.append({"role": "user", "content": tool_results})
 
@@ -199,7 +276,6 @@ if user_input:
             reply = run_agent(user_input)
         st.write(reply)
 
-    # حفظ دائم للمحادثة بقاعدة البيانات بعد كل رد
     st.session_state.conversation_id = save_conversation(
         st.session_state.conversation_id, st.session_state.history
     )
