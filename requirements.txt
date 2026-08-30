@@ -6,3 +6,4 @@ Pillow>=10.0.0
 rembg>=2.0.50
 onnxruntime>=1.17.0
 psycopg2-binary>=2.9.9
+opencv-python-headless>=4.9.0
