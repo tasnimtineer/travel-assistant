@@ -116,17 +116,25 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------
-# رفع صورة لمعالجتها (صورة جواز سفر مثلاً) - اختياري
+# رفع صورة أو أكثر لمعالجتها (صور جواز سفر مثلاً) - اختياري
 # ---------------------------------------------------------------
-uploaded_file = st.file_uploader("📎 ارفع صورة هنا لو حابة تعدّليها (اختياري)", type=["jpg", "jpeg", "png"])
-uploaded_image_path = None
-if uploaded_file is not None:
+uploaded_files = st.file_uploader(
+    "📎 ارفعي صورة أو أكثر هنا لمعالجتها (اختياري)",
+    type=["jpg", "jpeg", "png"],
+    accept_multiple_files=True,
+)
+uploaded_image_paths = []
+if uploaded_files:
     os.makedirs("/tmp/uploads", exist_ok=True)
-    uploaded_image_path = f"/tmp/uploads/{uploaded_file.name}"
-    with open(uploaded_image_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.image(uploaded_file, caption="الصورة المرفوعة", width=150)
-    st.caption(f"✅ جاهزة — اكتبي مثلاً: عدّل هذي الصورة لمقاس جواز سفر")
+    cols = st.columns(len(uploaded_files))
+    for i, uploaded_file in enumerate(uploaded_files):
+        path = f"/tmp/uploads/{uploaded_file.name}"
+        with open(path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        uploaded_image_paths.append(path)
+        with cols[i]:
+            st.image(uploaded_file, width=100)
+    st.caption(f"✅ {len(uploaded_image_paths)} صورة جاهزة — اكتبي مثلاً: عدّل كل الصور لمقاس جواز سفر")
 
 # ---------------------------------------------------------------
 # الاتصال بـ Claude
@@ -142,8 +150,13 @@ MODEL = "claude-sonnet-4-6"
 SYSTEM_PROMPT = """أنتِ مساعدة إدارية محترفة وذكية لشركة سفر وسياحة، اسمك يوحي بالثقة والاحترافية.
 تتعاملين مع الموظفين بطريقة طبيعية ودافئة، مثل زميلة عمل خبيرة ومتعاونة - مو مثل روبوت يقرأ سكريبت.
 
-مهامك: إدخال بيانات العملاء، معالجة صور جواز السفر، تلخيص أخبار السفر والطيران والعمرة،
-البحث عن تذاكر الطيران، وإرسال الإيميلات.
+مهامك: إدخال بيانات العملاء، معالجة صور جواز السفر (تستخرج تلقائياً وجه الشخص
+حتى لو الصورة المرفوعة جواز كامل بنصوص وباركود)، تلخيص أخبار السفر والطيران
+والعمرة، البحث عن تذاكر الطيران، وإرسال الإيميلات.
+
+لو المستخدم رفع أكثر من صورة بنفس الرسالة (هتلاقي كل المسارات مذكورة)،
+نادي أداة معالجة الصور مرة منفصلة لكل صورة على حدة، وبعدها لخّصي له النتيجة
+النهائية لكل الصور بشكل واحد مرتب.
 
 كيف تتصرفين بذكاء:
 - إذا طلب المستخدم شي وأداة معينة أرجعت رسالة تفيد إن مفتاح API غير مُعد، لا تكرري الرسالة التقنية حرفياً وتوقفي.
@@ -202,11 +215,17 @@ def run_agent(user_message: str):
 
 user_input = st.chat_input("اكتب رسالتك هنا...")
 if user_input:
+    # لو فيه صور مرفوعة، نلحق مساراتها كلها تلقائياً بالرسالة
+    message_to_send = user_input
+    if uploaded_image_paths:
+        paths_text = "\n".join(uploaded_image_paths)
+        message_to_send = f"{user_input}\n(مسارات الصور المرفوعة:\n{paths_text})"
+
     with st.chat_message("user"):
         st.write(user_input)
     with st.chat_message("assistant", avatar="✈️"):
         with st.spinner("جاري المعالجة..."):
-            reply = run_agent(user_input)
+            reply = run_agent(message_to_send)
         st.write(reply)
 
     # حفظ دائم للمحادثة بقاعدة البيانات بعد كل رد
